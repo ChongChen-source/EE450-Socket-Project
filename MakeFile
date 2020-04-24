@@ -1,0 +1,18 @@
+# Makefile for EE450 Socket Project
+
+all: client serverA serverB serverC aws
+
+client: client.cpp client.h
+	g++ -c client.cpp -o client
+
+serverA: serverA.cpp serverA.h
+	g++ -c serverA.cpp -o serverA
+
+serverB: serverB.cpp serverB.h
+	g++ -c serverB.cpp -o serverB
+
+serverC: serverC.cpp serverC.h
+	g++ -c serverC.cpp -o serverC
+
+aws: aws.cpp aws.h
+	g++ -c aws.cpp -o aws

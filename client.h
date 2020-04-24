@@ -1,10 +1,6 @@
-#ifndef AWS_H
-#define AWS_H
+#ifndef CLIENT_H
+#define CLIENT_H
 
-#define SERVER_A_UDP_PORT "30319"
-#define SERVER_B_UDP_PORT "31319"
-#define SERVER_C_UDP_PORT "32319"
-#define AWS_UDP_PORT "33319"
 #define AWS_TCP_PORT "34319"  // the TCP port client will be connecting to
 
 #define LOCALHOST "127.0.0.1"
@@ -31,23 +27,6 @@ typedef struct {
     float delay;
     int path[SIZE];
 }RESULT;
-
-// struct to store the map information received from server A & B and sent to server C
-typedef struct {
-    char mapID;
-    int sourceVertex;   // Vertices index is between 0 and 99
-    int destiVertex;    // Vertices index is between 0 and 99
-    int fileSize;       // Unit: KB, [1, 1048576)
-    float speedProp;    // Unit: km/s, [10000.00, 299792.00)
-    int speedTrans;     // Unit: KB/s, [1, 1048576)
-    int vertices[SIZE];
-    //the max number of edges is 40
-    float distances[SIZE][SIZE]; // Unit: km, [1.00, 10000.00)
-}MAP;
-
-
-
-void sigchld_handler(int s);
 
 // get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa);
