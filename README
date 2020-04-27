@@ -1,0 +1,88 @@
+EE450 Project
+Name: Chong Chen
+USC Student ID: 7460787319
+
+1. What I have done in the assignment.
+Set up a distributed server system (AWS, Server A, Server B, Server C) to handle client's query. 
+To be specific, calculating the shortest path within the asked map.
+
+
+2. What my code files are and what each one of them does.
+aws.cpp: 
+    Implement the AWS server.
+    Establish the TCP connection with client.
+    Receive query from client and send the calculated result back.
+    Establish the UDP connections on different ports with server A, B and C.
+    Send map id to serverA and serverB, receive map information from them, and check the source and destination vertices.
+    Send map information to serverC, and receive the calculated results from it.
+
+serverA.cpp:
+    Read and store the maps' information the map1.txt file.
+    Receive quried map id from AWS over UDP.
+    Check whether the quried map id is valid or not.
+    Send map id's query result and map's information (if found) back to AWS over UDP.
+
+serverB.cpp:
+    Similar to serverA, read from map2.txt.
+
+serverC.cpp:
+    Recive map information from AWS over UDP.
+    Calculate the shortest path using Dijkstra ALgorithm.
+    Send the calculated results back to AWS over UDP.
+
+client.cpp:
+    Communicate with AWS over TCP.
+    Ask a query for shortest path.
+    Receive and display the calculated results from AWS.
+
+3. The format of all the messages exchanged.
+    Between AWS and client:
+        struct QUERY and RESULT.
+        // struct to store the query information received from the client
+        typedef struct {
+            char mapID;         
+            int sourceVertex;   // Vertices index is between 0 and 99
+            int destiVertex;    // Vertices index is between 0 and 99
+            int fileSize;       // Unit: KB, [1, 1048576)
+        }QUERY;
+
+        // struct to store the result information sent to the clinet
+        typedef struct {
+            int sourceVertex;   // Vertices index is between 0 and 99
+            int destiVertex;    // Vertices index is between 0 and 99
+            float minLen;
+            float timeTrans;
+            float timeProp;
+            float delay;
+            int path[SIZE];
+        }RESULT;
+
+    Between AWS and Server A or B:
+        char mapID_quired
+        struct MAP.
+        // struct to store the map information received from server B & B and sent to server C
+        typedef struct {
+            char mapID;
+            int foundFlag;
+            int sourceVertex;   // Vertices index is between 0 and 99
+            int destiVertex;    // Vertices index is between 0 and 99
+            int fileSize;       // Unit: KB, [1, 1048576)
+            float speedProp;    // Unit: km/s, [10000.00, 299792.00)
+            int speedTrans;     // Unit: KB/s, [1, 1048576)
+            int vertices[SIZE];
+            //the max number of edges is 40
+            float distances[SIZE][SIZE]; // Unit: km, [1.00, 10000.00)
+        }MAP;
+
+    Between AWS and Server C:
+        struct MAP and RESULT
+        Same as shown above.
+
+4. Idiosyncrasies:
+The results are all zero.
+
+5. Reused Code:
+a. Initialize the TCP and UDP: start code from Beej's Guide to Network Programming. http://www.beej.us/guide/bgnet/
+b. The implementation of the Dijkstra Algorithm: modified from https://www.geeksforgeeks.org/dijkstras-shortest-path-algorithm-greedy-algo-7/
+
+

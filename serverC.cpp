@@ -19,19 +19,95 @@
 #include <map>
 #include <stack>
 #include <float.h>
-#include "serverC.h"
+
+#define SERVER_C_UDP_PORT "32319"
+#define AWS_UDP_PORT "33319"
+
+#define LOCALHOST "127.0.0.1"
+
+#define MAX_LEN 1024
+#define BACKLOG 10  // how many pending connections queue will hold
+#define SIZE 10     // For each map, the maximum number of vertices is 10
+
+// struct to store the result information sent to the clinet
+typedef struct {
+    int sourceVertex;   // Vertices index is between 0 and 99
+    int destiVertex;    // Vertices index is between 0 and 99
+    float minLen;
+    float timeTrans;
+    float timeProp;
+    float delay;
+    int path[SIZE];
+}RESULT;
+
+// struct to store the map information received from server A & B and sent to server C
+typedef struct {
+    char mapID;
+	int foundFlag;
+    int sourceVertex;   // Vertices index is between 0 and 99
+    int destiVertex;    // Vertices index is between 0 and 99
+    int fileSize;       // Unit: KB, [1, 1048576)
+    float speedProp;    // Unit: km/s, [10000.00, 299792.00)
+    int speedTrans;     // Unit: KB/s, [1, 1048576)
+    int vertices[SIZE];
+    //the max number of edges is 40
+    float distances[SIZE][SIZE]; // Unit: km, [1.00, 10000.00)
+}MAP;
 
 using namespace std;
+
+int vertices[SIZE];
+float distances[SIZE][SIZE];
+map<int, vector<int> > paths;
 
 /*
  * Using Dijkstra Algorithm to find out the shortest path beyween the source vertex and the destination vertex in the chosen map.
  * @param mapInfo   The MAP struct containing the information of the map for calculation
  * @return  The length of the shortest path
+ * 
+ * Modified form https://www.geeksforgeeks.org/dijkstras-shortest-path-algorithm-greedy-algo-7/
  */
 float shortestPath(MAP &mapInfo) {
-    float minLen = FLT_MAX;
-    
-    return minLen;
+	int sour = mapInfo.sourceVertex;
+	int dest = mapInfo.destiVertex;
+	memcpy(vertices,mapInfo.vertices,sizeof(mapInfo.vertices));
+	memcpy(distances,mapInfo.distances,sizeof(mapInfo.distances));
+
+	set<int> visitedVertices;
+	int curr;
+	for (int i = 0; i < SIZE; i++) {
+		if (vertices[i] != -1) paths[vertices[i]].push_back(sour);
+		if (vertices[i] == sour) curr = i;
+	}
+
+	visitedVertices.insert(sour);
+	for (int i = 1; i < SIZE; i += 1) {
+		double min = MAXFLOAT;
+		int index = 0;
+		for (int j = 0; j < SIZE; j++) {
+			if (visitedVertices.find(j) == visitedVertices.end() && vertices[j] != -1 && *((float*)distances + SIZE * curr + j) < min) {
+				min = *((float*)distances + SIZE * sour + j);
+				index = j;
+			}
+		}
+		if (min == MAXFLOAT) continue;
+		visitedVertices.insert(index);
+
+		for (int j = 0; j < SIZE; j++) {
+			if (*((float*)distances +  SIZE * curr + j) > *((float*)distances + SIZE * curr + index) + *((float*)distances + SIZE * index + j)) {
+				paths[vertices[j]] = paths[vertices[index]];
+				paths[vertices[j]].push_back(vertices[index]);
+				*((float*)distances + SIZE * curr + j) = *((float*)distances + SIZE * curr+ index) + *((float*)distances + SIZE * index + j);
+			}
+		}
+	}
+
+	int loc = -1;
+	for (int i = 0; i < SIZE; i++) {
+		if (vertices[i] == dest) loc = i;
+	}
+
+	return *((float*)distances + SIZE * curr + loc);
 }
 
 // get sockaddr, IPv4 or IPv6:
@@ -44,15 +120,16 @@ void *get_in_addr(struct sockaddr *sa)
 }
 
 int main(void) {
-    /******************************************* Server C UDP Boot Up ************************************************/
-// copy from Beej's-Guide --listener.c
+
+// start code from Beej's Guide to Network Programming. http://www.beej.us/guide/bgnet/ -- start
+/******************************************* Server C UDP Boot Up ************************************************/
 	int sockfd;
 	struct addrinfo hints, *servinfo, *p;
 	int rv;
 	int numbytes;
 	struct sockaddr_storage their_addr;
 
-	char buf[MAXDATASIZE];
+	char buf[MAX_LEN];
 	MAP mapInfoRecvFromAWS;
 	RESULT resultsSendToAWS;
 
@@ -87,15 +164,13 @@ int main(void) {
 		return 2;
 	}
 	freeaddrinfo(servinfo);
-// copy from Beej's Guide --end
+// start code from Beej's Guide to Network Programming. http://www.beej.us/guide/bgnet/ -- end
 
     cout << "The Server C is up and running using UDP on port " << SERVER_C_UDP_PORT << endl;
 
-    /******************************************* main accept() loop ************************************************/
+/************************************************ main loop ******************************************************/
     while (1) {
 		// For calculation, receive data for calculation from AWS
-		map<int, vector<int> > paths;
-
 		addr_len = sizeof their_addr;
 		if ((numbytes = recvfrom(sockfd, &buf, 1024, 0, (struct sockaddr *)&their_addr, &addr_len)) == -1) {
 			perror("recvfrom");
@@ -122,10 +197,12 @@ int main(void) {
 		resultsSendToAWS.delay = resultsSendToAWS.timeProp + resultsSendToAWS.timeTrans;
 
 		int index = 0;
-		// for (auto& n : paths[mapInfoRecvFromAWS.destiVertex]) {
-		// 	resultsSendToAWS.path[index] = n;
-        //     index++;
-		// }
+
+		for (auto& n : paths[mapInfoRecvFromAWS.destiVertex]) {
+			resultsSendToAWS.path[index] = n;
+            index++;
+		}
+
 		while (index < SIZE) {
 			resultsSendToAWS.path[index] = -1;
             index++;
@@ -147,7 +224,7 @@ int main(void) {
 		cout << "Propagation delay: <" << resultsSendToAWS.timeProp << " s" << endl;
 		
         // Send results to the AWS server
-		if ((numbytes = sendto(sockfd, &resultsSendToAWS, MAXDATASIZE, 0, (struct sockaddr *)&their_addr, addr_len)) == -1) {
+		if ((numbytes = sendto(sockfd, &resultsSendToAWS, MAX_LEN, 0, (struct sockaddr *)&their_addr, addr_len)) == -1) {
 			perror("senderr: sendto");
 			exit(1);
 		}

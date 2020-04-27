@@ -1,4 +1,3 @@
-#include "client.h"
 #include <arpa/inet.h>
 #include <ctype.h>
 #include <errno.h>
@@ -20,9 +19,35 @@
 #include <unistd.h>
 #include <vector>
 
+#define AWS_TCP_PORT "34319"  // the TCP port client will be connecting to
+
+#define LOCALHOST "127.0.0.1"
+
+#define MAX_LEN 1024
+#define BACKLOG 10  // how many pending connections queue will hold
+#define SIZE 10     // For each map, the maximum number of vertices is 10
+
+// struct to store the query information received from the client
+typedef struct {
+    char mapID;         
+    int sourceVertex;   // Vertices index is between 0 and 99
+    int destiVertex;    // Vertices index is between 0 and 99
+    int fileSize;       // Unit: KB, [1, 1048576)
+}QUERY;
+
+// struct to store the result information sent to the clinet
+typedef struct {
+    int sourceVertex;   // Vertices index is between 0 and 99
+    int destiVertex;    // Vertices index is between 0 and 99
+    float minLen;
+    float timeTrans;
+    float timeProp;
+    float delay;
+    int path[SIZE];
+}RESULT;
+
 using namespace std;
 
-// copy from Beej's Guide
 void *get_in_addr(struct sockaddr *sa) {
   if (sa->sa_family == AF_INET) {
     return &(((struct sockaddr_in *)sa)->sin_addr);
@@ -32,30 +57,32 @@ void *get_in_addr(struct sockaddr *sa) {
 }
 
 int main(int argc, char *argv[]) {
-  // copy from Beej's Guide --begin
+
+// start code from Beej's Guide to Network Programming. http://www.beej.us/guide/bgnet/ -- start
   int sockfd, numbytes;
-  QUERY sendBuf;
-  RESULT recvBuf;
-  char buf[MAXDATASIZE];
+  QUERY queryBuf;
+  RESULT resultBuf;
+  char buf[MAX_LEN];
 
   struct addrinfo hints, *servinfo, *p;
   int rv;
   char s[INET6_ADDRSTRLEN];
 
-  if (argc == 5 && strcmp(argv[0], "./client") == 0)
-    ;
+  if (argc == 5 && strcmp(argv[0], "./client") == 0);
   else {
     exit(1);
   }
-
+// start code from Beej's Guide to Network Programming. http://www.beej.us/guide/bgnet/ -- end
   // store input parameters
-  sendBuf.mapID = *argv[1];
-  sendBuf.sourceVertex = atoi(argv[2]);
-  sendBuf.destiVertex = atoi(argv[3]);
-  sendBuf.fileSize = atoi(argv[4]);
+  queryBuf.mapID = *argv[1];
+  queryBuf.sourceVertex = atoi(argv[2]);
+  queryBuf.destiVertex = atoi(argv[3]);
+  queryBuf.fileSize = atoi(argv[4]);
   memset(&hints, 0, sizeof hints);
   hints.ai_socktype = SOCK_STREAM;
 
+// start code from Beej's Guide to Network Programming. http://www.beej.us/guide/bgnet/ -- start
+  // Initialize TCP connection
   if ((rv = getaddrinfo(LOCALHOST, AWS_TCP_PORT, &hints, &servinfo)) != 0) {
     fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
     return 1;
@@ -79,85 +106,61 @@ int main(int argc, char *argv[]) {
     return 2;
   }
 
-  inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr), s,
-            sizeof s);
+  inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr), s, sizeof s);
   cout << "The client is up and running" << endl;
-
   freeaddrinfo(servinfo);
-  // copy from Beej's Guide --end
+// start code from Beej's Guide to Network Programming. http://www.beej.us/guide/bgnet/ -- start
 
   // Client sends query to the AWS via TCP
-  if (send(sockfd, &sendBuf, sizeof(sendBuf), 0) == -1)
+  if (send(sockfd, &queryBuf, sizeof(queryBuf), 0) == -1) {
     perror("send");
+  }
 
   cout << "The client has sent query to AWS using TCP:"
-       << " start vertex " << sendBuf.sourceVertex << " ; destination vertex "
-       << sendBuf.destiVertex << " ; map  " << sendBuf.mapID << " ; file size "
-       << sendBuf.fileSize << endl;
+       << " start vertex " << queryBuf.sourceVertex << " ; destination vertex "
+       << queryBuf.destiVertex << " ; map  " << queryBuf.mapID << " ; file size "
+       << queryBuf.fileSize << endl;
 
   // Client receives the calculated results from AWS via TCP
   if ((numbytes = recv(sockfd, &buf, 1024, 0)) == -1) {
     perror("recv");
     exit(1);
   }
-  memset(&recvBuf, 0, sizeof(recvBuf));
-  memcpy(&recvBuf, buf, sizeof(recvBuf));
+  memset(&resultBuf, 0, sizeof(resultBuf));
+  memcpy(&resultBuf, buf, sizeof(resultBuf));
 
   // Error: No such map id found
-  if (recvBuf.sourceVertex == -1) {
-    cout << "No map id " << sendBuf.mapID << "> found" << endl;
+  if (resultBuf.sourceVertex == -1) {
+    cout << "No map id " << queryBuf.mapID << "> found" << endl;
   }
 
   // Error: No such source vertex index found
-  else if (recvBuf.sourceVertex == -2) {
-    cout << "No vertex id " << sendBuf.sourceVertex << "> found" << endl;
+  else if (resultBuf.sourceVertex == -2) {
+    cout << "No vertex id " << queryBuf.sourceVertex << "> found" << endl;
   }
 
   // Error: No such destination vertex index found
-  else if (recvBuf.sourceVertex == -3) {
-    cout << "No vertex id " << sendBuf.destiVertex << "> found" << endl;
+  else if (resultBuf.sourceVertex == -3) {
+    cout << "No vertex id " << queryBuf.destiVertex << "> found" << endl;
   }
 
   // Dispalying received calculated results:
   else {
-    cout << "The client has received results from AWS:" << endl;
-    cout << "------------------------------------------------------" << endl;
-    cout << "Source    Destination    Min Length      Tt      Tp      Delay    "
-         << endl;
-    cout.width(5);
-    cout << recvBuf.sourceVertex;
-    cout.width();
-    cout << "     ";
-    cout.width(6);
-    cout << recvBuf.destiVertex;
-    cout.width();
-    cout << "         ";
-    cout.width(8);
-    cout << recvBuf.minLen;
-    cout.width();
-    cout << "      ";
-    cout.width(6);
-    cout << recvBuf.timeTrans;
-    cout.width();
-    cout << "  ";
-    cout.width(6);
-    cout << recvBuf.timeProp;
-    cout.width();
-    cout << "  ";
-    cout.width(7);
-    cout << recvBuf.delay;
-    cout.width();
-    cout << "    " << endl;
-    cout << "------------------------------------------------------" << endl;
-    cout << "Shortest path: ";
+    printf("The client has received results form AWS:\n");
+    printf("-------------------------------------------------------\n");
+    printf("Source   Destination    Min Length    Tt    Tp    Delay\n");
+    printf("-------------------------------------------------------\n");
+    printf("  %d        %d            %.2f         %.2f  %.2f   %.2f\n",
+      resultBuf.sourceVertex, resultBuf.destiVertex, resultBuf.minLen, resultBuf.timeTrans, resultBuf.timeProp, resultBuf.delay);
+    printf("-------------------------------------------------------\n");
     for (int i = 0; i < SIZE; i++) {
-      if (recvBuf.path[i] != -1) {
-        cout << recvBuf.path[i] << " -- ";
+      if (resultBuf.path[i] != -1) {
+        cout << resultBuf.path[i] << " -- ";
       } else {
         break;
       }
     }
-    cout << recvBuf.destiVertex << endl;
+    cout << resultBuf.destiVertex << endl;
   }
 
   return 0;

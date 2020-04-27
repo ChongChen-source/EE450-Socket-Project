@@ -11,10 +11,55 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <iostream>
-#include "aws.h"
 
 using namespace std;
 
+#define SERVER_A_UDP_PORT "30319"
+#define SERVER_B_UDP_PORT "31319"
+#define SERVER_C_UDP_PORT "32319"
+#define AWS_UDP_PORT "33319"
+#define AWS_TCP_PORT "34319"  // the TCP port client will be connecting to
+
+#define LOCALHOST "127.0.0.1"
+
+#define BACKLOG 10  // how many pending connections queue will hold
+#define MAX_LEN 1024
+#define SIZE 10     // For each map, the maximum number of vertices is 10
+
+// struct to store the query information received from the client
+typedef struct {
+    char mapID;         
+    int sourceVertex;   // Vertices index is between 0 and 99
+    int destiVertex;    // Vertices index is between 0 and 99
+    int fileSize;       // Unit: KB, [1, 1048576)
+}QUERY;
+
+// struct to store the result information sent to the clinet
+typedef struct {
+    int sourceVertex;   // Vertices index is between 0 and 99
+    int destiVertex;    // Vertices index is between 0 and 99
+    float minLen;
+    float timeTrans;
+    float timeProp;
+    float delay;
+    int path[SIZE];
+}RESULT;
+
+// struct to store the map information received from server A & B and sent to server C
+typedef struct {
+    char mapID;
+	int foundFlag;
+    int sourceVertex;   // Vertices index is between 0 and 99
+    int destiVertex;    // Vertices index is between 0 and 99
+    int fileSize;       // Unit: KB, [1, 1048576)
+    float speedProp;    // Unit: km/s, [10000.00, 299792.00)
+    int speedTrans;     // Unit: KB/s, [1, 1048576)
+    int vertices[SIZE];
+    //the max number of edges is 40
+    float distances[SIZE][SIZE]; // Unit: km, [1.00, 10000.00)
+}MAP;
+
+// start code from Beej's Guide to Network Programming. http://www.beej.us/guide/bgnet/ -- Start
 void sigchld_handler(int s)
 {
 	int saved_errno = errno;
@@ -29,9 +74,11 @@ void *get_in_addr(struct sockaddr *sa)
 	}
 	return &(((struct sockaddr_in6*)sa)->sin6_addr);
 }
+// start code from Beej's Guide to Network Programming. http://www.beej.us/guide/bgnet/ -- end
 
 int main(void)
 {
+// start code from Beej's Guide to Network Programming. http://www.beej.us/guide/bgnet/ -- start
 	int sockfd, new_fd;  			
 	struct addrinfo hints, *servinfo, *p;	
 	struct sockaddr_storage their_addr; 	
@@ -43,10 +90,8 @@ int main(void)
 	char s[INET6_ADDRSTRLEN];		
 	int rv;					
 	int numbytes;				
-	char snd_buf[MAXDATASIZE];
-
-	bool flagA;
-	bool flagB;
+	char snd_buf[MAX_LEN];
+// start code from Beej's Guide to Network Programming. http://www.beej.us/guide/bgnet/ -- end
 	QUERY queryFromClient;
 	MAP mapInfoFromA;
 	MAP mapInfoFromB;
@@ -54,7 +99,8 @@ int main(void)
 	RESULT resultsRecvFromC;
 	RESULT resultSendToClient;
 
-// Code from Beej's Guide
+// start code from Beej's Guide to Network Programming. http://www.beej.us/guide/bgnet/ -- start
+
 /****************************************** AWS TCP Initialization ******************************************/ 
 	memset(&hints, 0, sizeof hints);
 	hints.ai_family = AF_UNSPEC;
@@ -110,7 +156,7 @@ int main(void)
 	struct addrinfo udp_hints, *udp_servinfo, *udp_p;
 	int udp_rv;
 	struct sockaddr_storage udp_their_addr;
-	char udp_buf[MAXDATASIZE];
+	char udp_buf[MAX_LEN];
 	socklen_t udp_addr_len;
 	char udp_s[INET6_ADDRSTRLEN];
 
@@ -192,8 +238,9 @@ int main(void)
 	}
 
 	udp_C_p = udp_C_servinfo;
+// start code from Beej's Guide to Network Programming. http://www.beej.us/guide/bgnet/ -- end
 
-/******************************************* Servers Boot Up Message *******************************************/
+/******************************************* AWS Boot Up Message ***********************************************/
 	cout << "The AWS is up and running." << endl;
 /******************************************* main accept() loop ************************************************/
 	while(1) {
@@ -204,6 +251,7 @@ int main(void)
 			continue;
 		}
 
+		// start code from Beej's Guide to Network Programming. http://www.beej.us/guide/bgnet/ -- start
 		// get connection from the client
 		inet_ntop(their_addr.ss_family,
 			get_in_addr((struct sockaddr *)&their_addr),
@@ -217,44 +265,100 @@ int main(void)
 				perror("recv");
 				exit(1);
 			}
-
+		// start code from Beej's Guide to Network Programming. http://www.beej.us/guide/bgnet/ -- end
 			// store the client's query information
 			memset(&queryFromClient, 0, sizeof(queryFromClient));
 			memcpy(&queryFromClient, snd_buf, sizeof(queryFromClient));
-			cout << "The AWS has received map ID" << queryFromClient.mapID 
+			cout << "The AWS has received map ID " << queryFromClient.mapID 
 				 << ", start vertex " << queryFromClient.sourceVertex 
 				 << ", destination vertex " << queryFromClient.destiVertex
 				 << " and file size " << queryFromClient.fileSize
 				 << " from the client using TCP over port " << AWS_TCP_PORT
 				 << endl;
-			
+	
 			// AWS forwards the map ID to Server A via UDP
 			char mapID_sendToA = queryFromClient.mapID;
 			if ((numbytes = sendto(udp_sockfd, &mapID_sendToA, sizeof(mapID_sendToA), 0, udp_A_p->ai_addr, udp_A_p->ai_addrlen)) == -1) {
 				perror("talker: sendto");
 				exit(1);
 			}
-			cout << "he AWS has sent map ID to server A using UDP over port " << AWS_UDP_PORT << endl;
+			cout << "The AWS has sent map ID to server A using UDP over port " << AWS_UDP_PORT << endl;
 
 			// Server A seraches for the map ID from map1.txt
 
 			// Server A sends the search result back to AWS via UDP
+			memset(udp_buf, 0, 1024);
+			udp_addr_len = sizeof udp_their_addr;
+			if ((numbytes = recvfrom(udp_sockfd, &udp_buf, 1024, 0, (struct sockaddr *)&udp_their_addr, &udp_addr_len)) == -1) {
+				perror("recvfrom");
+				exit(1);
+			}
 
+			memset(&mapInfoFromA, 0, sizeof(mapInfoFromA));
+			memcpy(&mapInfoFromA, udp_buf, sizeof(mapInfoFromA));
 
+			// foundFlag = 0: Found map
+			// foundFlag = -1: No such map
+			// foundFlag = -2: No such source vertex
+			// foundFlag = -3: No such destination vertex 
 
-			// AWS forwards the map ID to Server B via UDP
-			char mapID_sendToB = queryFromClient.mapID;
+			if (mapInfoFromA.foundFlag == 0) {
+				cout << "The AWS has received map information from server A" << endl;
+			}
 
-			// Server B seraches for the map ID from map1.txt
+			// map not found by serverA in map1.txt
+			if (mapInfoFromA.foundFlag == -1) {
+				// AWS forwards the map ID to Server B via UDP
+				char mapID_sendToB = queryFromClient.mapID;		
 
-			// Server B sends the search result back to AWS via UDP
+				if ((numbytes = sendto(udp_sockfd, &mapID_sendToB, sizeof(mapID_sendToB), 0, udp_B_p->ai_addr, udp_B_p->ai_addrlen)) == -1) {
+					perror("talker: sendto");
+					exit(1);
+				}
 
-			if (flagA) mapInfoSendToC = mapInfoFromA;
-			if (flagB) mapInfoSendToC = mapInfoFromB;
+				cout << "The AWS has sent map ID to server B using UDP over port " << AWS_UDP_PORT << endl;
 
-			if (flagA || flagB) {
-				// AWS sends the map information to Server C via UDP
+				// receive result from B
+				memset(udp_buf, 0, 1024);
+				udp_addr_len = sizeof udp_their_addr;
+				if ((numbytes = recvfrom(udp_sockfd, &udp_buf, 1024, 0, (struct sockaddr *)&udp_their_addr, &udp_addr_len)) == -1) {
+					perror("recvfrom");
+					exit(1);
+				}
+
+				// Server B seraches for the map ID from map1.txt
+
+				// Server B sends the search result back to AWS via UDP
+				memset(&mapInfoFromB, 0, sizeof(mapInfoFromB));
+				memcpy(&mapInfoFromB, udp_buf, sizeof(mapInfoFromB));
+
+				if (mapInfoFromB.foundFlag == 0) {
+					cout << "The AWS has received map information from server B" << endl;
+				}
+			}
+
+			// Receive map info, check source and destination vertices
+			if (mapInfoFromA.foundFlag == 0) mapInfoSendToC = mapInfoFromA;
+			else if (mapInfoFromB.foundFlag == 0) mapInfoSendToC = mapInfoFromB;
+			int sour = mapInfoSendToC.sourceVertex;
+			int dest = mapInfoSendToC.destiVertex;
+
+			for (int vi = 0; vi < SIZE; vi++) {
+				int vertexIndex = mapInfoSendToC.vertices[vi];
+				if (vertexIndex == sour) break;
+				if (vertexIndex == -1 || vi == SIZE) mapInfoSendToC.foundFlag = -2;
+			}
+
+			for (int vi = 0; vi < SIZE; vi++) {
+				int vertexIndex = mapInfoSendToC.vertices[vi];
+				if (vertexIndex == dest) break;
+				if (vertexIndex == -1 || vi == SIZE) mapInfoSendToC.foundFlag = -3;
+			}
+
+			if (mapInfoSendToC.foundFlag == 0) {
 				cout << "The source and destination vertex are in the graph" << endl;
+
+				// AWS sends the map information to Server C via UDP
 				if ((numbytes = sendto(udp_sockfd, &mapInfoSendToC, sizeof(mapInfoSendToC), 0, udp_C_p->ai_addr, udp_C_p->ai_addrlen)) == -1) {
 					perror("talker: sendto");
 					exit(1);
@@ -291,10 +395,21 @@ int main(void)
 
 			close(udp_sockfd);
 
-			// Source or Destination vertex 
-			if (!flagA && !flagB) {
+			// map not found neither by serverA or serverB
+			if (mapInfoFromA.foundFlag == -1 && mapInfoFromB.foundFlag == -1) {
 				resultSendToClient.sourceVertex = -1;
-				cout << "<Source/destination> vertex not found in the graph, sending error to client using TCP over port " << AWS_TCP_PORT << endl;
+			}
+
+			// Source vertex not found
+			else if (mapInfoSendToC.foundFlag == -2) {
+				resultSendToClient.sourceVertex = -2;
+				cout << "Source vertex not found in the graph, sending error to client using TCP over port " << AWS_TCP_PORT << endl;
+			}
+
+			// Source vertex not found
+			else if (mapInfoSendToC.foundFlag == -3) {
+				resultSendToClient.sourceVertex = -3;
+				cout << "Destination vertex not found in the graph, sending error to client using TCP over port " << AWS_TCP_PORT << endl;
 			}
 
 			// AWS sends to client the shortest path and delay results

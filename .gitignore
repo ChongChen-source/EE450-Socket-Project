@@ -1,1 +1,6 @@
 *.code-workspace
+aws
+serverA
+serverB
+serverC
+client
